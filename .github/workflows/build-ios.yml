@@ -8,10 +8,13 @@ on:
       - ".github/workflows/build-ios.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: 检出代码
@@ -25,6 +28,8 @@ jobs:
         run: xcodegen generate
 
       - name: 编译（不签名）
+        id: build
+        continue-on-error: true
         working-directory: ios
         run: |
           set -o pipefail
@@ -38,9 +43,30 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: 失败时把日志提交回仓库
+        if: steps.build.outcome == 'failure'
+        run: |
+          {
+            echo "# Build failed"
+            echo ""
+            echo '```'
+            if grep -q "error:" build.log; then
+              grep -E "error:" build.log | head -40
+            else
+              tail -c 20000 build.log
+            fi
+            echo '```'
+          } > BUILD_ERROR.md
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add BUILD_ERROR.md
+          git commit -m "ci: build error [skip ci]" || true
+          git push origin HEAD:main
 
       - name: 打包成 ipa
+        if: steps.build.outcome == 'success'
         run: |
           mkdir -p Payload
           cp -R ios/build/Build/Products/Release-iphoneos/PhoneAgent.app Payload/
@@ -48,8 +74,13 @@ jobs:
           ls -lh PhoneAgent.ipa
 
       - name: 上传产物
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: PhoneAgent-ipa
           path: PhoneAgent.ipa
           retention-days: 30
+
+      - name: 标记失败
+        if: steps.build.outcome == 'failure'
+        run: exit 1
