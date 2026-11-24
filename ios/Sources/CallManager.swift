@@ -8,6 +8,7 @@ final class CallManager: NSObject {
     static let shared = CallManager()
 
     private var provider: CXProvider?
+    private let controller = CXCallController()
     private let speech = AVSpeechSynthesizer()
     private var activeCall: UUID?
     private var pendingText = ""
@@ -81,7 +82,7 @@ final class CallManager: NSObject {
         activeCall = nil
         let action = CXEndCallAction(call: uuid)
         let transaction = CXTransaction(action: action)
-        provider?.request(transaction) { _ in }
+        controller.request(transaction) { _ in }
     }
 }
 
